@@ -28,4 +28,24 @@ canvas {
   border-radius: 10px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
   background: #241a13;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  canvas {
+    width: 100vw;
+    border-radius: 0;
+    border-width: 2px;
+    max-height: 60vh;
+  }
+}
+
+@media (max-width: 640px) and (orientation: landscape) {
+  canvas {
+    max-height: 92vh;
+    width: 100vw;
+  }
 }

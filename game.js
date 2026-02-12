@@ -411,15 +411,23 @@
     ctx.fillText("Track, harvest, and survive the desert bloom rush.", BASE_WIDTH / 2, 214);
 
     ctx.font = "21px Trebuchet MS";
-    ctx.fillText("Move: Arrow Keys or WASD", BASE_WIDTH / 2, 270);
-    ctx.fillText("Harvest: E", BASE_WIDTH / 2, 302);
-    ctx.fillText("Sprint: Shift", BASE_WIDTH / 2, 334);
-    ctx.fillText("Fullscreen: F", BASE_WIDTH / 2, 366);
-    ctx.fillText("Start: Enter or Space", BASE_WIDTH / 2, 398);
-
-    ctx.fillStyle = "#ffda9a";
-    ctx.font = "bold 23px Trebuchet MS";
-    ctx.fillText("Press Enter to begin", BASE_WIDTH / 2, 454);
+    if (isTouchDevice) {
+      ctx.fillText("Drag left side to move", BASE_WIDTH / 2, 278);
+      ctx.fillText("Tap right side to harvest", BASE_WIDTH / 2, 314);
+      ctx.fillText("Collect 6 mushrooms before the storm!", BASE_WIDTH / 2, 358);
+      ctx.fillStyle = "#ffda9a";
+      ctx.font = "bold 23px Trebuchet MS";
+      ctx.fillText("Tap to begin", BASE_WIDTH / 2, 420);
+    } else {
+      ctx.fillText("Move: Arrow Keys or WASD", BASE_WIDTH / 2, 270);
+      ctx.fillText("Harvest: E", BASE_WIDTH / 2, 302);
+      ctx.fillText("Sprint: Shift", BASE_WIDTH / 2, 334);
+      ctx.fillText("Fullscreen: F", BASE_WIDTH / 2, 366);
+      ctx.fillText("Start: Enter or Space", BASE_WIDTH / 2, 398);
+      ctx.fillStyle = "#ffda9a";
+      ctx.font = "bold 23px Trebuchet MS";
+      ctx.fillText("Press Enter to begin", BASE_WIDTH / 2, 454);
+    }
   }
 
   function drawEndScreen(won) {
@@ -443,7 +451,7 @@
     ctx.fillText(`Mushrooms Collected: ${state.score}`, BASE_WIDTH / 2, 292);
 
     ctx.font = "22px Trebuchet MS";
-    ctx.fillText("Press Enter to play again", BASE_WIDTH / 2, 358);
+    ctx.fillText(isTouchDevice ? "Tap to play again" : "Press Enter to play again", BASE_WIDTH / 2, 358);
   }
 
   function drawPlaying(dt) {
@@ -484,10 +492,10 @@
       state.harvestCombo = 0;
     }
 
-    const left = state.keysDown.has(KEY.LEFT) || state.keysDown.has(KEY.A);
-    const right = state.keysDown.has(KEY.RIGHT) || state.keysDown.has(KEY.D);
-    const up = state.keysDown.has(KEY.UP) || state.keysDown.has(KEY.W);
-    const down = state.keysDown.has(KEY.DOWN) || state.keysDown.has(KEY.S);
+    const left = state.keysDown.has(KEY.LEFT) || state.keysDown.has(KEY.A) || state.keysDown.has("_touchL");
+    const right = state.keysDown.has(KEY.RIGHT) || state.keysDown.has(KEY.D) || state.keysDown.has("_touchR");
+    const up = state.keysDown.has(KEY.UP) || state.keysDown.has(KEY.W) || state.keysDown.has("_touchU");
+    const down = state.keysDown.has(KEY.DOWN) || state.keysDown.has(KEY.S) || state.keysDown.has("_touchD");
     const sprintHeld = state.keysDown.has(KEY.SHIFT);
 
     const inputX = right - left;
@@ -531,7 +539,9 @@
     }
     state.nearestTargetId = nearest ? nearest.id : null;
     state.nearTargetId = nearest && nearestDist <= 44 ? nearest.id : null;
-    state.message = state.nearTargetId ? "Press E to harvest nearby mushroom." : "Follow the guide arrow to your next bloom.";
+    state.message = state.nearTargetId
+      ? (isTouchDevice ? "Tap right side to harvest!" : "Press E to harvest nearby mushroom.")
+      : (isTouchDevice ? "Drag to move toward the arrow." : "Follow the guide arrow to your next bloom.");
 
     for (const h of state.hazards) {
       const dist = Math.hypot(p.x - h.x, p.y - h.y);
@@ -710,13 +720,131 @@
     state.keysDown.delete(key);
   });
 
+  /* ── Touch Controls ── */
+  const isTouchDevice = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+  const touch = { active: false, id: null, startX: 0, startY: 0, dx: 0, dy: 0 };
+  const TOUCH_DEAD = 12;
+
+  function canvasTouchXY(t) {
+    const r = canvas.getBoundingClientRect();
+    return { x: t.clientX - r.left, y: t.clientY - r.top, cw: r.width, ch: r.height };
+  }
+
+  canvas.addEventListener("touchstart", (ev) => {
+    ev.preventDefault();
+    const t = ev.changedTouches[0];
+    const { x, y, cw, ch } = canvasTouchXY(t);
+
+    if (state.mode !== "playing") {
+      startGame();
+      return;
+    }
+
+    /* Right third of canvas = harvest */
+    if (x > cw * 0.67) {
+      attemptHarvest();
+      return;
+    }
+
+    touch.active = true;
+    touch.id = t.identifier;
+    touch.startX = t.clientX;
+    touch.startY = t.clientY;
+    touch.dx = 0;
+    touch.dy = 0;
+  }, { passive: false });
+
+  canvas.addEventListener("touchmove", (ev) => {
+    ev.preventDefault();
+    for (const t of ev.changedTouches) {
+      if (t.identifier === touch.id) {
+        touch.dx = t.clientX - touch.startX;
+        touch.dy = t.clientY - touch.startY;
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", (ev) => {
+    for (const t of ev.changedTouches) {
+      if (t.identifier === touch.id) {
+        touch.active = false;
+        touch.dx = 0;
+        touch.dy = 0;
+      }
+    }
+  });
+
+  /* Inject touch direction into keysDown each frame */
+  function applyTouchInput() {
+    state.keysDown.delete("_touchL");
+    state.keysDown.delete("_touchR");
+    state.keysDown.delete("_touchU");
+    state.keysDown.delete("_touchD");
+    if (!touch.active) return;
+    const mag = Math.hypot(touch.dx, touch.dy);
+    if (mag < TOUCH_DEAD) return;
+    const nx = touch.dx / mag;
+    const ny = touch.dy / mag;
+    if (nx < -0.38) state.keysDown.add("_touchL");
+    if (nx > 0.38) state.keysDown.add("_touchR");
+    if (ny < -0.38) state.keysDown.add("_touchU");
+    if (ny > 0.38) state.keysDown.add("_touchD");
+  }
+
+  /* Draw on-screen touch hints during play */
+  function drawTouchHints() {
+    if (!isTouchDevice || state.mode !== "playing") return;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = "#fff";
+    ctx.font = "14px Trebuchet MS";
+    ctx.textAlign = "left";
+    ctx.fillText("Drag to move", 18, BASE_HEIGHT - 14);
+    ctx.textAlign = "right";
+    ctx.fillText("Tap right side to harvest", BASE_WIDTH - 18, BASE_HEIGHT - 14);
+    ctx.restore();
+  }
+
+  /* Patch updatePlaying to also read touch keys */
+  const origUpdatePlaying = updatePlaying;
+  function patchedUpdatePlaying(dt) {
+    applyTouchInput();
+    origUpdatePlaying(dt);
+  }
+
+  /* Replace updatePlaying reference in update() */
+  function update2(dt) {
+    if (state.mode === "playing") {
+      patchedUpdatePlaying(dt);
+    } else {
+      state.worldTime += dt;
+    }
+    render(dt);
+    if (isTouchDevice) drawTouchHints();
+  }
+
+  /* Patch input reading to include touch keys */
+  const origLeft = KEY.LEFT;
+  const origRight = KEY.RIGHT;
+  const origUp = KEY.UP;
+  const origDown = KEY.DOWN;
+
   window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("orientationchange", () => { setTimeout(resizeCanvas, 100); });
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) state.keysDown.clear();
+    if (document.hidden) { state.keysDown.clear(); touch.active = false; touch.dx = 0; touch.dy = 0; }
   });
 
   resizeCanvas();
   render();
   if (rafId) cancelAnimationFrame(rafId);
-  rafId = requestAnimationFrame(tick);
+
+  /* Override tick to use patched update */
+  function tick2(ts) {
+    const dt = Math.min(0.033, (ts - lastTs) / 1000);
+    lastTs = ts;
+    update2(dt);
+    rafId = requestAnimationFrame(tick2);
+  }
+  rafId = requestAnimationFrame(tick2);
 })();
