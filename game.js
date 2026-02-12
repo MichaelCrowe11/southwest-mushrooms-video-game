@@ -2,8 +2,10 @@
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
+  const GAME_TITLE = "Southwest Mushrooms: Desert Harvest";
   const BASE_WIDTH = 960;
   const BASE_HEIGHT = 540;
+  const FLOOR_Y = 400;
   const KEY = {
     LEFT: "ArrowLeft",
     RIGHT: "ArrowRight",
@@ -15,6 +17,7 @@
     S: "s",
     E: "e",
     B: "b",
+    SHIFT: "Shift",
     ENTER: "Enter",
     SPACE: " ",
     F: "f",
@@ -24,24 +27,33 @@
   const state = {
     mode: "start",
     elapsed: 0,
-    timeLimit: 120,
-    goal: 3,
+    timeLimit: 135,
+    goal: 6,
     score: 0,
     nearTargetId: null,
+    nearestTargetId: null,
     message: "",
     cameraShake: 0,
+    worldTime: 0,
+    harvestCombo: 0,
+    harvestStreakTimer: 0,
     keysDown: new Set(),
     player: {
       x: BASE_WIDTH * 0.5,
-      y: BASE_HEIGHT * 0.72,
+      y: BASE_HEIGHT * 0.85,
       vx: 0,
       vy: 0,
-      speed: 230,
-      r: 14
+      speed: 200,
+      sprintSpeed: 310,
+      accel: 1150,
+      friction: 7.5,
+      r: 13,
+      stamina: 1
     },
     mushrooms: [],
     tumbleweeds: [],
-    hazards: []
+    hazards: [],
+    dust: []
   };
 
   function createRng(seed) {
@@ -54,6 +66,10 @@
     };
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
   function isNearHazard(x, y, buffer = 24) {
     for (const h of state.hazards) {
       const dist = Math.hypot(x - h.x, y - h.y);
@@ -63,14 +79,14 @@
   }
 
   function createMushroom(id, rand) {
-    const zoneLeft = 90;
-    const zoneRight = BASE_WIDTH - 90;
-    const zoneTop = 90;
-    const zoneBottom = BASE_HEIGHT - 90;
+    const zoneLeft = 70;
+    const zoneRight = BASE_WIDTH - 70;
+    const zoneTop = 95;
+    const zoneBottom = BASE_HEIGHT - 70;
     let x = zoneLeft + rand() * (zoneRight - zoneLeft);
     let y = zoneTop + rand() * (zoneBottom - zoneTop);
     let tries = 0;
-    while (isNearHazard(x, y) && tries < 14) {
+    while (isNearHazard(x, y, 28) && tries < 18) {
       x = zoneLeft + rand() * (zoneRight - zoneLeft);
       y = zoneTop + rand() * (zoneBottom - zoneTop);
       tries += 1;
@@ -79,25 +95,40 @@
       id,
       x,
       y,
-      r: 12 + rand() * 4,
-      type: rand() > 0.35 ? "blue-veil" : "sun-cap",
-      collected: false
+      r: 11 + rand() * 5,
+      type: rand() > 0.32 ? "blue-veil" : "sun-cap",
+      collected: false,
+      pulse: rand() * Math.PI * 2
     };
   }
 
   function createHazards() {
     state.hazards = [
-      { x: 200, y: 160, r: 36 },
-      { x: 760, y: 280, r: 40 },
-      { x: 480, y: 410, r: 42 }
+      { x: 190, y: 176, r: 36, pulse: 0.2 },
+      { x: 745, y: 282, r: 39, pulse: 1.1 },
+      { x: 470, y: 412, r: 41, pulse: 2.0 }
     ];
   }
 
   function createTumbleweeds() {
     state.tumbleweeds = [
-      { x: 130, y: 220, r: 18, vx: 90, phase: 0.3 },
-      { x: 840, y: 360, r: 14, vx: -110, phase: 1.4 }
+      { x: 120, y: 232, r: 18, vx: 90, phase: 0.3 },
+      { x: 825, y: 348, r: 14, vx: -112, phase: 1.4 },
+      { x: 520, y: 300, r: 12, vx: 72, phase: 2.3 }
     ];
+  }
+
+  function createDust() {
+    state.dust = [];
+    for (let i = 0; i < 42; i += 1) {
+      state.dust.push({
+        x: (i * 31) % BASE_WIDTH,
+        y: 260 + (i * 17) % 280,
+        r: 1 + (i % 3) * 0.9,
+        vx: 6 + (i % 5) * 3.5,
+        alpha: 0.06 + (i % 4) * 0.025
+      });
+    }
   }
 
   function startGame() {
@@ -106,123 +137,171 @@
     state.score = 0;
     state.message = `Harvest ${state.goal} mushrooms before the storm rolls in.`;
     state.cameraShake = 0;
+    state.worldTime = 0;
     state.nearTargetId = null;
+    state.nearestTargetId = null;
+    state.harvestCombo = 0;
+    state.harvestStreakTimer = 0;
     state.player.x = BASE_WIDTH * 0.5;
-    state.player.y = BASE_HEIGHT * 0.87;
+    state.player.y = BASE_HEIGHT * 0.86;
     state.player.vx = 0;
     state.player.vy = 0;
+    state.player.stamina = 1;
     state.mushrooms = [];
     const rand = createRng(20260212);
+
     createHazards();
     createTumbleweeds();
+    createDust();
 
-    state.mushrooms.push({ id: 1, x: 422, y: 462, r: 14, type: "blue-veil", collected: false });
-    state.mushrooms.push({ id: 2, x: 520, y: 452, r: 13, type: "sun-cap", collected: false });
-    state.mushrooms.push({ id: 3, x: 580, y: 418, r: 12.5, type: "blue-veil", collected: false });
-    for (let i = 3; i < 18; i += 1) {
+    state.mushrooms.push({ id: 1, x: 424, y: 458, r: 14, type: "blue-veil", collected: false, pulse: 0.5 });
+    state.mushrooms.push({ id: 2, x: 518, y: 449, r: 13, type: "sun-cap", collected: false, pulse: 1.8 });
+    state.mushrooms.push({ id: 3, x: 582, y: 416, r: 12.5, type: "blue-veil", collected: false, pulse: 2.6 });
+    for (let i = 3; i < 20; i += 1) {
       state.mushrooms.push(createMushroom(i + 1, rand));
     }
   }
 
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  function drawMesaBackground() {
+  function drawSkyAndSun() {
     const grad = ctx.createLinearGradient(0, 0, 0, BASE_HEIGHT);
-    grad.addColorStop(0, "#f09a56");
-    grad.addColorStop(0.48, "#da6f3f");
-    grad.addColorStop(1, "#6d3f2a");
+    grad.addColorStop(0, "#f5af66");
+    grad.addColorStop(0.42, "#df7a46");
+    grad.addColorStop(1, "#8f4a2d");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
 
-    ctx.fillStyle = "#b25c31";
+    const sunX = 140 + Math.sin(state.worldTime * 0.04) * 48;
+    const sunY = 92 + Math.cos(state.worldTime * 0.03) * 18;
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 12, sunX, sunY, 120);
+    sunGrad.addColorStop(0, "rgba(255, 238, 176, 0.9)");
+    sunGrad.addColorStop(0.6, "rgba(255, 189, 110, 0.35)");
+    sunGrad.addColorStop(1, "rgba(255, 189, 110, 0)");
+    ctx.fillStyle = sunGrad;
     ctx.beginPath();
-    ctx.moveTo(0, 360);
-    ctx.lineTo(140, 290);
-    ctx.lineTo(300, 320);
-    ctx.lineTo(470, 250);
-    ctx.lineTo(640, 315);
-    ctx.lineTo(820, 270);
-    ctx.lineTo(BASE_WIDTH, 340);
-    ctx.lineTo(BASE_WIDTH, BASE_HEIGHT);
-    ctx.lineTo(0, BASE_HEIGHT);
+    ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawParallaxMesas() {
+    const camRatio = (state.player.x - BASE_WIDTH * 0.5) / BASE_WIDTH;
+    const farShift = camRatio * 36;
+    const midShift = camRatio * 68;
+
+    ctx.fillStyle = "#b86537";
+    ctx.beginPath();
+    ctx.moveTo(-70 - farShift, 330);
+    ctx.lineTo(110 - farShift, 262);
+    ctx.lineTo(255 - farShift, 296);
+    ctx.lineTo(430 - farShift, 228);
+    ctx.lineTo(580 - farShift, 280);
+    ctx.lineTo(770 - farShift, 238);
+    ctx.lineTo(1040 - farShift, 338);
+    ctx.lineTo(1040, BASE_HEIGHT);
+    ctx.lineTo(-80, BASE_HEIGHT);
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "#e9b96f";
-    ctx.fillRect(0, 400, BASE_WIDTH, BASE_HEIGHT - 400);
+    ctx.fillStyle = "#ae5f34";
+    ctx.beginPath();
+    ctx.moveTo(-80 - midShift, 360);
+    ctx.lineTo(125 - midShift, 290);
+    ctx.lineTo(290 - midShift, 318);
+    ctx.lineTo(470 - midShift, 250);
+    ctx.lineTo(640 - midShift, 314);
+    ctx.lineTo(820 - midShift, 270);
+    ctx.lineTo(1060 - midShift, 352);
+    ctx.lineTo(1060, BASE_HEIGHT);
+    ctx.lineTo(-80, BASE_HEIGHT);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-    ctx.fillStyle = "#d29045";
-    for (let i = 0; i < 38; i += 1) {
+  function drawGround() {
+    ctx.fillStyle = "#deb26d";
+    ctx.fillRect(0, FLOOR_Y, BASE_WIDTH, BASE_HEIGHT - FLOOR_Y);
+
+    ctx.fillStyle = "#d29347";
+    for (let i = 0; i < 62; i += 1) {
       const x = (i * 57) % BASE_WIDTH;
-      const y = 408 + ((i * 23) % 120);
-      ctx.fillRect(x, y, 2, 7);
+      const y = FLOOR_Y + 12 + ((i * 19) % 120);
+      ctx.fillRect(x, y, 2, 8);
     }
   }
 
-  function drawStartScreen() {
-    drawMesaBackground();
-    ctx.fillStyle = "rgba(20, 12, 8, 0.58)";
-    ctx.fillRect(130, 80, BASE_WIDTH - 260, BASE_HEIGHT - 160);
-
-    ctx.fillStyle = "#ffd892";
-    ctx.font = "bold 56px Trebuchet MS";
-    ctx.textAlign = "center";
-    ctx.fillText("Southwest Mushroom Trek", BASE_WIDTH / 2, 175);
-
-    ctx.fillStyle = "#fff2cf";
-    ctx.font = "25px Trebuchet MS";
-    ctx.fillText("Gather rare desert fungi while avoiding toxic patches.", BASE_WIDTH / 2, 235);
-
-    ctx.font = "22px Trebuchet MS";
-    ctx.fillText("Move: Arrow Keys or WASD", BASE_WIDTH / 2, 290);
-    ctx.fillText("Harvest: E", BASE_WIDTH / 2, 325);
-    ctx.fillText("Fullscreen: F", BASE_WIDTH / 2, 360);
-    ctx.fillText("Start: Enter or Space", BASE_WIDTH / 2, 395);
-
-    ctx.fillStyle = "#ffd892";
-    ctx.font = "bold 24px Trebuchet MS";
-    ctx.fillText("Press Enter to begin", BASE_WIDTH / 2, 455);
+  function drawDust(dt) {
+    for (const d of state.dust) {
+      d.x += d.vx * dt;
+      if (d.x > BASE_WIDTH + 18) d.x = -18;
+      ctx.fillStyle = `rgba(255, 236, 205, ${d.alpha})`;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y + Math.sin(state.worldTime * 0.8 + d.x * 0.02) * 4, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawPlayer() {
     const p = state.player;
+    const heading = p.vx * 0.03;
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.fillStyle = "#2f4f4f";
-    ctx.fillRect(-9, -17, 18, 28);
-    ctx.fillStyle = "#6f9970";
-    ctx.fillRect(-11, -28, 22, 11);
-    ctx.fillStyle = "#f4d7ad";
+    ctx.rotate(heading);
+
+    ctx.fillStyle = "#1f5963";
+    ctx.fillRect(-9, -18, 18, 30);
+
+    ctx.fillStyle = "#79a67b";
+    ctx.fillRect(-12, -30, 24, 12);
+
+    ctx.fillStyle = "#f0d1a2";
     ctx.beginPath();
-    ctx.arc(0, -35, 8, 0, Math.PI * 2);
+    ctx.arc(0, -38, 8, 0, Math.PI * 2);
     ctx.fill();
+
     ctx.restore();
   }
 
   function drawMushroom(m) {
     if (m.collected) return;
+    const glow = 0.5 + Math.sin(state.worldTime * 4 + m.pulse) * 0.5;
+    const nearby = m.id === state.nearTargetId;
     ctx.save();
     ctx.translate(m.x, m.y);
-    ctx.fillStyle = m.type === "blue-veil" ? "#c9ddff" : "#ffce8d";
+
+    ctx.fillStyle = nearby ? "rgba(255, 244, 196, 0.5)" : `rgba(190, 225, 255, ${0.08 + glow * 0.08})`;
     ctx.beginPath();
-    ctx.ellipse(0, -5, m.r, m.r * 0.6, 0, 0, Math.PI * 2);
+    ctx.arc(0, -2, m.r + 9, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#f5e1c2";
-    ctx.fillRect(-2, -4, 4, 15);
+
+    ctx.fillStyle = m.type === "blue-veil" ? "#d7e7ff" : "#ffd9a0";
+    ctx.beginPath();
+    ctx.ellipse(0, -7, m.r, m.r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#f8e7cd";
+    ctx.fillRect(-2.4, -6, 4.8, 16);
+
+    if (nearby) {
+      ctx.strokeStyle = "rgba(255, 252, 228, 0.9)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(0, 0, m.r + 12, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   function drawHazard(h) {
-    ctx.fillStyle = "#6d8a49";
+    const pulse = 0.35 + Math.sin(state.worldTime * 3 + h.pulse) * 0.18;
+    ctx.fillStyle = `rgba(96, 127, 59, ${0.8 + pulse * 0.2})`;
     ctx.beginPath();
     ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#567132";
+
+    ctx.strokeStyle = `rgba(162, 201, 110, ${0.18 + pulse * 0.18})`;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(h.x + h.r * 0.3, h.y - h.r * 0.2, h.r * 0.4, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(h.x, h.y, h.r + 8 + pulse * 12, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   function drawTumbleweed(t, dt) {
@@ -234,51 +313,159 @@
     ctx.save();
     ctx.translate(t.x, t.y + bob);
     ctx.strokeStyle = "#8a5e2e";
-    ctx.lineWidth = 2.2;
+    ctx.lineWidth = 2.1;
     for (let i = 0; i < 6; i += 1) {
       ctx.beginPath();
-      ctx.arc(0, 0, t.r - i * 2, i * 0.4, Math.PI * 1.5 + i * 0.2);
+      ctx.arc(0, 0, t.r - i * 1.9, i * 0.35, Math.PI * 1.5 + i * 0.22);
       ctx.stroke();
     }
     ctx.restore();
   }
 
+  function drawTargetGuide() {
+    if (!state.nearestTargetId || state.nearTargetId) return;
+    const target = state.mushrooms.find((m) => m.id === state.nearestTargetId && !m.collected);
+    if (!target) return;
+    const p = state.player;
+    const dx = target.x - p.x;
+    const dy = target.y - p.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return;
+
+    const dirX = dx / dist;
+    const dirY = dy / dist;
+    const arrowX = p.x + dirX * 26;
+    const arrowY = p.y + dirY * 26;
+    const spin = Math.atan2(dirY, dirX);
+
+    ctx.save();
+    ctx.translate(arrowX, arrowY);
+    ctx.rotate(spin);
+    ctx.fillStyle = "rgba(255, 244, 198, 0.9)";
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(-5, -6);
+    ctx.lineTo(-5, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLighting() {
+    const p = state.player;
+    const vignette = ctx.createRadialGradient(p.x, p.y - 40, 20, p.x, p.y - 40, 420);
+    vignette.addColorStop(0, "rgba(255, 240, 210, 0)");
+    vignette.addColorStop(1, "rgba(45, 22, 12, 0.35)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+  }
+
   function drawHud() {
-    ctx.fillStyle = "rgba(23, 16, 10, 0.72)";
-    ctx.fillRect(14, 12, 340, 86);
+    ctx.fillStyle = "rgba(25, 15, 9, 0.73)";
+    ctx.fillRect(14, 12, 368, 102);
     ctx.fillStyle = "#fff1cf";
     ctx.textAlign = "left";
     ctx.font = "bold 24px Trebuchet MS";
     ctx.fillText(`Harvested: ${state.score}/${state.goal}`, 28, 42);
-    ctx.font = "21px Trebuchet MS";
+    ctx.font = "20px Trebuchet MS";
     const remaining = Math.max(0, state.timeLimit - state.elapsed);
-    ctx.fillText(`Time: ${remaining.toFixed(1)}s`, 28, 74);
+    ctx.fillText(`Time: ${remaining.toFixed(1)}s`, 28, 72);
+    ctx.fillText(`Combo: x${Math.max(1, state.harvestCombo)}`, 200, 72);
+
+    const staminaW = 150;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.fillRect(28, 82, staminaW, 12);
+    ctx.fillStyle = "#9ce8d5";
+    ctx.fillRect(28, 82, staminaW * state.player.stamina, 12);
+    ctx.strokeStyle = "rgba(250, 250, 250, 0.35)";
+    ctx.strokeRect(28, 82, staminaW, 12);
   }
 
   function drawMessage() {
     if (!state.message) return;
-    ctx.fillStyle = "rgba(17, 11, 7, 0.7)";
-    ctx.fillRect(190, 14, BASE_WIDTH - 380, 52);
+    ctx.fillStyle = "rgba(18, 11, 7, 0.72)";
+    ctx.fillRect(188, 14, BASE_WIDTH - 376, 52);
     ctx.fillStyle = "#ffe3af";
     ctx.font = "21px Trebuchet MS";
     ctx.textAlign = "center";
     ctx.fillText(state.message, BASE_WIDTH / 2, 47);
   }
 
+  function drawStartScreen() {
+    drawSkyAndSun();
+    drawParallaxMesas();
+    drawGround();
+    drawDust(1 / 60);
+    drawLighting();
+
+    ctx.fillStyle = "rgba(18, 10, 7, 0.63)";
+    ctx.fillRect(96, 64, BASE_WIDTH - 192, BASE_HEIGHT - 128);
+
+    ctx.fillStyle = "#ffd892";
+    ctx.font = "bold 54px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText(GAME_TITLE, BASE_WIDTH / 2, 155);
+
+    ctx.fillStyle = "#fff2cf";
+    ctx.font = "24px Trebuchet MS";
+    ctx.fillText("Track, harvest, and survive the desert bloom rush.", BASE_WIDTH / 2, 214);
+
+    ctx.font = "21px Trebuchet MS";
+    ctx.fillText("Move: Arrow Keys or WASD", BASE_WIDTH / 2, 270);
+    ctx.fillText("Harvest: E", BASE_WIDTH / 2, 302);
+    ctx.fillText("Sprint: Shift", BASE_WIDTH / 2, 334);
+    ctx.fillText("Fullscreen: F", BASE_WIDTH / 2, 366);
+    ctx.fillText("Start: Enter or Space", BASE_WIDTH / 2, 398);
+
+    ctx.fillStyle = "#ffda9a";
+    ctx.font = "bold 23px Trebuchet MS";
+    ctx.fillText("Press Enter to begin", BASE_WIDTH / 2, 454);
+  }
+
+  function drawEndScreen(won) {
+    drawSkyAndSun();
+    drawParallaxMesas();
+    drawGround();
+    drawDust(1 / 60);
+    drawLighting();
+
+    ctx.fillStyle = "rgba(15, 11, 8, 0.64)";
+    ctx.fillRect(128, 104, BASE_WIDTH - 256, BASE_HEIGHT - 208);
+
+    ctx.fillStyle = won ? "#c7ffc4" : "#ffd0a8";
+    ctx.font = "bold 48px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText(won ? "Bloom Secured!" : "Storm Took The Harvest", BASE_WIDTH / 2, 198);
+
+    ctx.fillStyle = "#fff1cf";
+    ctx.font = "26px Trebuchet MS";
+    ctx.fillText(`${GAME_TITLE}`, BASE_WIDTH / 2, 246);
+    ctx.fillText(`Mushrooms Collected: ${state.score}`, BASE_WIDTH / 2, 292);
+
+    ctx.font = "22px Trebuchet MS";
+    ctx.fillText("Press Enter to play again", BASE_WIDTH / 2, 358);
+  }
+
   function drawPlaying(dt) {
     if (state.cameraShake > 0) {
-      const shake = Math.min(6, state.cameraShake * 22);
+      const shake = Math.min(6, state.cameraShake * 24);
       const ox = (Math.random() - 0.5) * shake;
       const oy = (Math.random() - 0.5) * shake;
       ctx.save();
       ctx.translate(ox, oy);
     }
 
-    drawMesaBackground();
+    drawSkyAndSun();
+    drawParallaxMesas();
+    drawGround();
+    drawDust(dt);
+
     state.hazards.forEach(drawHazard);
     state.mushrooms.forEach(drawMushroom);
     state.tumbleweeds.forEach((t) => drawTumbleweed(t, dt));
     drawPlayer();
+    drawTargetGuide();
+    drawLighting();
     drawHud();
     drawMessage();
 
@@ -287,34 +474,43 @@
     }
   }
 
-  function drawEndScreen(won) {
-    drawMesaBackground();
-    ctx.fillStyle = "rgba(15, 11, 8, 0.6)";
-    ctx.fillRect(150, 110, BASE_WIDTH - 300, BASE_HEIGHT - 220);
-    ctx.fillStyle = won ? "#b6ffb6" : "#ffd2aa";
-    ctx.font = "bold 50px Trebuchet MS";
-    ctx.textAlign = "center";
-    ctx.fillText(won ? "Harvest Complete!" : "Dust Storm Overtook You", BASE_WIDTH / 2, 215);
-
-    ctx.fillStyle = "#fff1cf";
-    ctx.font = "29px Trebuchet MS";
-    ctx.fillText(`Mushrooms Collected: ${state.score}`, BASE_WIDTH / 2, 280);
-    ctx.font = "24px Trebuchet MS";
-    ctx.fillText("Press Enter to play again", BASE_WIDTH / 2, 360);
-  }
-
   function updatePlaying(dt) {
     const p = state.player;
     state.elapsed += dt;
-    state.cameraShake = Math.max(0, state.cameraShake - dt * 1.8);
+    state.worldTime += dt;
+    state.cameraShake = Math.max(0, state.cameraShake - dt * 2);
+    state.harvestStreakTimer = Math.max(0, state.harvestStreakTimer - dt);
+    if (state.harvestStreakTimer === 0) {
+      state.harvestCombo = 0;
+    }
 
     const left = state.keysDown.has(KEY.LEFT) || state.keysDown.has(KEY.A);
     const right = state.keysDown.has(KEY.RIGHT) || state.keysDown.has(KEY.D);
     const up = state.keysDown.has(KEY.UP) || state.keysDown.has(KEY.W);
     const down = state.keysDown.has(KEY.DOWN) || state.keysDown.has(KEY.S);
+    const sprintHeld = state.keysDown.has(KEY.SHIFT);
 
-    p.vx = (right - left) * p.speed;
-    p.vy = (down - up) * p.speed;
+    const inputX = right - left;
+    const inputY = down - up;
+    const mag = Math.hypot(inputX, inputY) || 1;
+    const normX = inputX / mag;
+    const normY = inputY / mag;
+
+    if (sprintHeld && (inputX !== 0 || inputY !== 0) && p.stamina > 0) {
+      p.stamina = clamp(p.stamina - dt * 0.24, 0, 1);
+    } else {
+      p.stamina = clamp(p.stamina + dt * 0.16, 0, 1);
+    }
+    const sprintMul = sprintHeld && p.stamina > 0.08 ? 1 : 0;
+    const targetSpeed = p.speed + (p.sprintSpeed - p.speed) * sprintMul;
+    const targetVX = normX * targetSpeed;
+    const targetVY = normY * targetSpeed;
+
+    p.vx += (targetVX - p.vx) * clamp((p.accel * dt) / Math.max(1, Math.abs(targetVX - p.vx)), 0, 1);
+    p.vy += (targetVY - p.vy) * clamp((p.accel * dt) / Math.max(1, Math.abs(targetVY - p.vy)), 0, 1);
+    p.vx *= 1 / (1 + p.friction * dt);
+    p.vy *= 1 / (1 + p.friction * dt);
+
     p.x += p.vx * dt;
     p.y += p.vy * dt;
 
@@ -333,17 +529,31 @@
         nearest = m;
       }
     }
-    state.nearTargetId = nearest && nearestDist <= 42 ? nearest.id : null;
-    state.message = state.nearTargetId ? "Press E to harvest nearby mushroom." : "Search the wash for rare mushrooms.";
+    state.nearestTargetId = nearest ? nearest.id : null;
+    state.nearTargetId = nearest && nearestDist <= 44 ? nearest.id : null;
+    state.message = state.nearTargetId ? "Press E to harvest nearby mushroom." : "Follow the guide arrow to your next bloom.";
 
     for (const h of state.hazards) {
       const dist = Math.hypot(p.x - h.x, p.y - h.y);
       if (dist < h.r + p.r) {
-        p.x -= (p.vx || 0) * dt * 0.7;
-        p.y -= (p.vy || 0) * dt * 0.7;
-        state.elapsed += dt * 1.5;
+        const pushX = p.x - h.x;
+        const pushY = p.y - h.y;
+        const pushMag = Math.hypot(pushX, pushY) || 1;
+        p.x += (pushX / pushMag) * 3.2;
+        p.y += (pushY / pushMag) * 3.2;
+        p.vx *= 0.5;
+        p.vy *= 0.5;
+        state.elapsed += dt * 1.4;
         state.cameraShake = 0.35;
         state.message = "Toxic patch! You lost time.";
+      }
+    }
+
+    for (const t of state.tumbleweeds) {
+      const dist = Math.hypot(p.x - t.x, p.y - t.y);
+      if (dist < p.r + t.r * 0.68) {
+        p.vx += (p.x - t.x) * 0.12;
+        p.vy += (p.y - t.y) * 0.12;
       }
     }
 
@@ -363,10 +573,19 @@
     if (state.nearTargetId == null) return;
     const m = state.mushrooms.find((x) => x.id === state.nearTargetId);
     if (!m || m.collected) return;
+
     m.collected = true;
     state.score += 1;
-    state.cameraShake = 0.14;
-    state.message = `${m.type} harvested!`;
+    state.cameraShake = 0.16;
+    state.harvestCombo += 1;
+    state.harvestStreakTimer = 4;
+
+    if (state.harvestCombo >= 2) {
+      state.elapsed = Math.max(0, state.elapsed - 0.8);
+      state.message = `${m.type} harvested! Combo boost: +0.8s`;
+    } else {
+      state.message = `${m.type} harvested!`;
+    }
   }
 
   function render(dtForFx = 1 / 60) {
@@ -389,6 +608,8 @@
   function update(dt) {
     if (state.mode === "playing") {
       updatePlaying(dt);
+    } else {
+      state.worldTime += dt;
     }
     render(dt);
   }
@@ -404,6 +625,7 @@
 
   function renderGameToText() {
     const payload = {
+      title: GAME_TITLE,
       mode: state.mode,
       coordinate_system: "origin=(0,0) top-left; +x right; +y down; units pixels",
       objective: `collect ${state.goal} mushrooms in ${state.timeLimit}s`,
@@ -412,15 +634,18 @@
         y: Number(state.player.y.toFixed(1)),
         vx: Number(state.player.vx.toFixed(1)),
         vy: Number(state.player.vy.toFixed(1)),
-        radius: state.player.r
+        radius: state.player.r,
+        stamina: Number(state.player.stamina.toFixed(2))
       },
       score: state.score,
+      combo: state.harvestCombo,
       timer_remaining: Number(Math.max(0, state.timeLimit - state.elapsed).toFixed(2)),
       near_collectible_id: state.nearTargetId,
+      nearest_collectible_id: state.nearestTargetId,
       hazards: state.hazards.map((h) => ({ x: h.x, y: h.y, radius: h.r })),
       active_mushrooms: state.mushrooms
         .filter((m) => !m.collected)
-        .slice(0, 6)
+        .slice(0, 8)
         .map((m) => ({
           id: m.id,
           x: Number(m.x.toFixed(1)),
@@ -430,7 +655,7 @@
         })),
       active_mushroom_count: state.mushrooms.filter((m) => !m.collected).length,
       message: state.message,
-      controls: "Move=Arrow/WASD; Harvest=E (or B); Start/Restart=Enter/Space; Fullscreen=F"
+      controls: "Move=Arrow/WASD; Harvest=E (or B); Sprint=Shift; Start/Restart=Enter/Space; Fullscreen=F"
     };
     return JSON.stringify(payload);
   }
@@ -457,6 +682,7 @@
     const dt = clamped / 1000 / steps;
     for (let i = 0; i < steps; i += 1) {
       if (state.mode === "playing") updatePlaying(dt);
+      else state.worldTime += dt;
     }
     render(dt);
   };

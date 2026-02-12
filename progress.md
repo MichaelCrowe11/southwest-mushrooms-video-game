@@ -30,3 +30,7 @@ Original prompt: lets build a southwest mushrooms video game
 
 - Playwright validation completed (movement and harvest chain) with screenshots and state JSON.
 - No console error artifacts were produced in final scenario runs.
+
+- Rebranded to Desert Bloom: Fungi Frontier.
+- Major graphics pass: sky lighting, sun glow, parallax mesas, dust, vignette lighting, and richer entity rendering.
+- Playability pass: smooth acceleration, sprint + stamina, target guide arrow, combo time bonus, and tuned progression.
