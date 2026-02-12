@@ -246,16 +246,88 @@
     ctx.translate(p.x, p.y);
     ctx.rotate(heading);
 
-    ctx.fillStyle = "#1f5963";
-    ctx.fillRect(-9, -18, 18, 30);
+    /* ── Legs (brown pants) ── */
+    ctx.fillStyle = "#5c3d1e";
+    ctx.fillRect(-5, 4, 4, 12);
+    ctx.fillRect(1, 4, 4, 12);
 
-    ctx.fillStyle = "#79a67b";
-    ctx.fillRect(-12, -30, 24, 12);
+    /* ── Boots ── */
+    ctx.fillStyle = "#3a2a1a";
+    ctx.fillRect(-6, 14, 5, 3);
+    ctx.fillRect(1, 14, 5, 3);
 
+    /* ── Torso (teal work shirt) ── */
+    ctx.fillStyle = "#5BA4A4";
+    ctx.fillRect(-8, -10, 16, 16);
+
+    /* ── Arms ── */
+    ctx.fillStyle = "#4e9191";
+    ctx.fillRect(-11, -8, 4, 12);
+    ctx.fillRect(7, -8, 4, 12);
+
+    /* ── Hands ── */
     ctx.fillStyle = "#f0d1a2";
     ctx.beginPath();
-    ctx.arc(0, -38, 8, 0, Math.PI * 2);
+    ctx.arc(-9, 6, 2.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.beginPath();
+    ctx.arc(9, 6, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* ── Neck ── */
+    ctx.fillStyle = "#f0d1a2";
+    ctx.fillRect(-3, -14, 6, 5);
+
+    /* ── Head (light skin) ── */
+    ctx.fillStyle = "#f0d1a2";
+    ctx.beginPath();
+    ctx.arc(0, -22, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* ── Dark full beard ── */
+    ctx.fillStyle = "#3a2a1a";
+    ctx.beginPath();
+    ctx.moveTo(-7, -19);
+    ctx.quadraticCurveTo(-8, -12, 0, -10);
+    ctx.quadraticCurveTo(8, -12, 7, -19);
+    ctx.fill();
+
+    /* ── Eyes ── */
+    ctx.fillStyle = "#1a1008";
+    ctx.beginPath();
+    ctx.arc(-3.5, -24, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(3.5, -24, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* ── Shoulder-length dark brown hair ── */
+    ctx.fillStyle = "#2a1a0f";
+    ctx.beginPath();
+    ctx.arc(0, -24, 10, Math.PI * 0.85, Math.PI * 2.15);
+    ctx.fill();
+    /* Hair hanging down left */
+    ctx.fillRect(-10, -24, 3, 14);
+    /* Hair hanging down right */
+    ctx.fillRect(7, -24, 3, 14);
+
+    /* ── Wide-brimmed teal mushroom farmer hat ── */
+    ctx.fillStyle = "#5BA4A4";
+    /* Hat brim */
+    ctx.beginPath();
+    ctx.ellipse(0, -30, 16, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    /* Hat crown */
+    ctx.fillStyle = "#4e9191";
+    ctx.beginPath();
+    ctx.moveTo(-8, -30);
+    ctx.quadraticCurveTo(-8, -42, 0, -43);
+    ctx.quadraticCurveTo(8, -42, 8, -30);
+    ctx.closePath();
+    ctx.fill();
+    /* Hat band */
+    ctx.fillStyle = "#c4703a";
+    ctx.fillRect(-8, -32, 16, 2.5);
 
     ctx.restore();
   }
@@ -408,18 +480,18 @@
 
     ctx.fillStyle = "#fff2cf";
     ctx.font = "24px Trebuchet MS";
-    ctx.fillText("Track, harvest, and survive the desert bloom rush.", BASE_WIDTH / 2, 214);
+    ctx.fillText("Play as Mushroom Mike — track, harvest, and survive the bloom rush.", BASE_WIDTH / 2, 214);
 
     ctx.font = "21px Trebuchet MS";
     if (isTouchDevice) {
-      ctx.fillText("Drag left side to move", BASE_WIDTH / 2, 278);
+      ctx.fillText("Drag left side to move Mushroom Mike", BASE_WIDTH / 2, 278);
       ctx.fillText("Tap right side to harvest", BASE_WIDTH / 2, 314);
       ctx.fillText("Collect 6 mushrooms before the storm!", BASE_WIDTH / 2, 358);
       ctx.fillStyle = "#ffda9a";
       ctx.font = "bold 23px Trebuchet MS";
       ctx.fillText("Tap to begin", BASE_WIDTH / 2, 420);
     } else {
-      ctx.fillText("Move: Arrow Keys or WASD", BASE_WIDTH / 2, 270);
+      ctx.fillText("Move Mushroom Mike: Arrow Keys or WASD", BASE_WIDTH / 2, 270);
       ctx.fillText("Harvest: E", BASE_WIDTH / 2, 302);
       ctx.fillText("Sprint: Shift", BASE_WIDTH / 2, 334);
       ctx.fillText("Fullscreen: F", BASE_WIDTH / 2, 366);
@@ -443,7 +515,7 @@
     ctx.fillStyle = won ? "#c7ffc4" : "#ffd0a8";
     ctx.font = "bold 48px Trebuchet MS";
     ctx.textAlign = "center";
-    ctx.fillText(won ? "Bloom Secured!" : "Storm Took The Harvest", BASE_WIDTH / 2, 198);
+    ctx.fillText(won ? "Mushroom Mike Secured the Bloom!" : "The Storm Beat Mushroom Mike", BASE_WIDTH / 2, 198);
 
     ctx.fillStyle = "#fff1cf";
     ctx.font = "26px Trebuchet MS";
