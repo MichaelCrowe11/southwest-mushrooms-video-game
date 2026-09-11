@@ -1,6 +1,6 @@
 # southwest-mushrooms-video-game
 
-A small browser game, "Southwest Mushrooms: Desert Harvest", where you move Mushroom Mike across a desert canvas and harvest mushrooms before a timer runs out.
+A small browser game, Southwest Mushrooms: Desert Harvest, where you move Mushroom Mike across a desert canvas and harvest mushrooms before a timer runs out.
 
 ## Status
 
